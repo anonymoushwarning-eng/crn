@@ -1,0 +1,100 @@
+import { randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { dataDir } from './dataDir.server'
+
+const IMAGES_DIR = join(dataDir(), 'images')
+mkdirSync(IMAGES_DIR, { recursive: true })
+
+const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+// On Vercel the filesystem is ephemeral, so uploads go to Vercel Blob when a
+// store is linked to the project (which injects BLOB_READ_WRITE_TOKEN).
+// Locally the token is absent and images stay on disk in data/images/.
+const useBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN)
+
+if (process.env.VERCEL && !useBlob) {
+  console.warn(
+    '[crn] BLOB_READ_WRITE_TOKEN is not set — uploaded images will be stored in the ephemeral /tmp filesystem and will not persist.',
+  )
+}
+
+/** Already-hosted image URL (e.g. a Vercel Blob URL) rather than a local key. */
+export const isRemoteImage = (key: string) => /^https?:\/\//i.test(key)
+
+function imageFile(key: string) {
+  return join(IMAGES_DIR, key)
+}
+
+function metaFile(key: string) {
+  return join(IMAGES_DIR, `${key}.meta.json`)
+}
+
+function assertAllowed(data: ArrayBuffer, contentType: string) {
+  if (!ALLOWED.includes(contentType)) throw new Error('Unsupported image type.')
+  if (data.byteLength > MAX_IMAGE_BYTES) throw new Error('Image is larger than 10 MB.')
+}
+
+export async function saveImage(data: ArrayBuffer, contentType: string) {
+  assertAllowed(data, contentType)
+  const buffer = Buffer.from(data)
+
+  if (useBlob) {
+    const { put } = await import('@vercel/blob')
+    const pathname = `images/${randomUUID()}`
+    const blob = await put(pathname, buffer, {
+      access: 'public',
+      contentType,
+      addRandomSuffix: false,
+      cacheControlMaxAge: 31536000,
+    })
+    // Store the absolute URL as the image key so it can be served directly.
+    return blob.url
+  }
+
+  const key = randomUUID()
+  // contentType is kept in a sidecar so the image can be served with the right header.
+  writeFileSync(imageFile(key), buffer)
+  writeFileSync(metaFile(key), JSON.stringify({ contentType }))
+  return key
+}
+
+export async function readImage(key: string) {
+  if (isRemoteImage(key)) {
+    try {
+      const res = await fetch(key)
+      if (!res.ok) return null
+      return {
+        data: await res.arrayBuffer(),
+        metadata: { contentType: res.headers.get('content-type') ?? 'image/jpeg' },
+      }
+    } catch {
+      return null
+    }
+  }
+  try {
+    const data = readFileSync(imageFile(key))
+    const meta = JSON.parse(readFileSync(metaFile(key), 'utf8')) as { contentType?: string }
+    const arrayBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+    return { data: arrayBuffer as ArrayBuffer, metadata: { contentType: meta.contentType ?? 'image/jpeg' } }
+  } catch {
+    return null
+  }
+}
+
+export async function deleteImage(key: string | null | undefined) {
+  if (!key) return
+  if (isRemoteImage(key)) {
+    if (!useBlob) return
+    try {
+      const { del } = await import('@vercel/blob')
+      await del(key)
+    } catch {
+      // Already gone or not ours — nothing to clean up.
+    }
+    return
+  }
+  rmSync(imageFile(key), { force: true })
+  rmSync(metaFile(key), { force: true })
+}
