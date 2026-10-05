@@ -9,14 +9,18 @@ mkdirSync(IMAGES_DIR, { recursive: true })
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
-// On Vercel the filesystem is ephemeral, so uploads go to Vercel Blob when a
-// store is linked to the project (which injects BLOB_READ_WRITE_TOKEN).
-// Locally the token is absent and images stay on disk in data/images/.
-const useBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN)
+// On Vercel the filesystem is ephemeral, so uploads go to Vercel Blob once a
+// store is connected to the project. Connected stores inject either a static
+// read-write token or OIDC credentials (`BLOB_STORE_ID` + `VERCEL_OIDC_TOKEN`),
+// and the SDK picks up either automatically. Locally none are present, so
+// images stay on disk in data/images/.
+const useBlob = Boolean(
+  process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID || process.env.VERCEL_OIDC_TOKEN,
+)
 
 if (process.env.VERCEL && !useBlob) {
   console.warn(
-    '[crn] BLOB_READ_WRITE_TOKEN is not set — uploaded images will be stored in the ephemeral /tmp filesystem and will not persist.',
+    '[crn] No Vercel Blob credentials found — uploaded images will be stored in the ephemeral /tmp filesystem and will not persist.',
   )
 }
 
