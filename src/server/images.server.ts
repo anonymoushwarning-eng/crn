@@ -32,6 +32,15 @@ if (process.env.VERCEL && !useBlob) {
 /** True when uploads are stored in Vercel Blob (static token or OIDC). */
 export const blobEnabled = () => useBlob
 
+/**
+ * Whether browser→Blob client-token uploads can be issued. The classic
+ * `handleUpload` flow signs client tokens with a static read-write token, so
+ * OIDC credentials alone are not enough (Vercel only accepts a read-write
+ * token here; OIDC uploads would need the separate presigned flow). Without
+ * this, large videos can't bypass the serverless request-body limit.
+ */
+export const clientUploadsEnabled = () => Boolean(process.env.BLOB_READ_WRITE_TOKEN)
+
 /** Already-hosted image URL (e.g. a Vercel Blob URL) rather than a local key. */
 export const isRemoteImage = (key: string) => /^https?:\/\//i.test(key)
 

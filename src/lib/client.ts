@@ -78,23 +78,25 @@ export function isVideoFile(file: File) {
 // Serverless functions reject large request bodies (Vercel caps them around
 // 4.5 MB), so anything above this goes straight from the browser to Vercel Blob.
 const INLINE_LIMIT = 3.5 * 1024 * 1024
+// Conservative cap for the server `/api/upload` route. Above this a request will
+// be rejected, so direct-to-Blob uploads are required.
+const SERVER_LIMIT = 4 * 1024 * 1024
 
+/**
+ * Whether the server can issue client tokens for direct-to-Blob uploads. That
+ * flow signs tokens with a static read-write token (`BLOB_READ_WRITE_TOKEN`);
+ * OIDC credentials alone can't do it, and then only small files fit through the
+ * serverless `/api/upload` route.
+ */
 let blobMode: Promise<boolean> | null = null
-function blobUploadsAvailable(): Promise<boolean> {
+function directUploadsAvailable(): Promise<boolean> {
   if (!blobMode) {
     blobMode = fetch('/api/upload')
-      .then((r) => (r.ok ? r.json() : { blob: false }))
-      .then((j) => Boolean((j as { blob?: boolean }).blob))
+      .then((r) => (r.ok ? r.json() : { clientUpload: false }))
+      .then((j) => Boolean((j as { clientUpload?: boolean }).clientUpload))
       .catch(() => false)
   }
   return blobMode
-}
-
-// Read the session cookie (crn_session) for auth on Vercel Blob uploads.
-function getSessionCookie(): string | undefined {
-  if (typeof document === 'undefined') return undefined
-  const match = document.cookie.match(/(?:^|; )crn_session=([^;]*)/)
-  return match ? match[1] : undefined
 }
 
 export async function uploadMedia(
@@ -108,24 +110,30 @@ export async function uploadMedia(
   const body: Blob = isVideo ? file : await compressImage(imageFile, maxSize)
   const contentType = body.type || declaredType
 
-  if ((isVideo || body.size > INLINE_LIMIT) && (await blobUploadsAvailable())) {
+  if ((isVideo || body.size > INLINE_LIMIT) && (await directUploadsAvailable())) {
     try {
       const { upload } = await import('@vercel/blob/client')
       const ext = fileExt(file.name) || (isVideo ? 'mp4' : 'bin')
       const pathname = `media/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}.${ext}`
-      const sessionCookie = getSessionCookie()
       const blob = await upload(pathname, body, {
         access: 'public',
         handleUploadUrl: '/api/blob-upload',
         contentType,
         multipart: isVideo,
-        headers: sessionCookie ? { cookie: `crn_session=${sessionCookie}` } : undefined,
         onUploadProgress: (event) => onProgress?.(Math.round(event.percentage)),
       })
       return blob.url
     } catch {
-      // Fall back to the server route below (works locally and for small files).
+      // Fall through to the server route only if the file still fits there.
     }
+  }
+
+  // Anything too large for the serverless request body needs direct uploads,
+  // which require a static read-write token on the server.
+  if (body.size > SERVER_LIMIT) {
+    throw new Error(
+      'This file is too large to upload. Ask the site owner to add BLOB_READ_WRITE_TOKEN (from the Vercel Blob store) to the project for all environments.',
+    )
   }
 
   const res = await fetch('/api/upload', {

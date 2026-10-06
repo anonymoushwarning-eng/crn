@@ -13,6 +13,18 @@ export const Route = createFileRoute('/api/blob-upload')({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        // `handleUpload` signs client tokens with a static read-write token.
+        // OIDC credentials (BLOB_STORE_ID + VERCEL_OIDC_TOKEN) are not accepted
+        // here, so fail with an actionable message instead of a bare 400.
+        if (!process.env.BLOB_READ_WRITE_TOKEN) {
+          return Response.json(
+            {
+              error:
+                'Direct uploads are not configured. Add BLOB_READ_WRITE_TOKEN from your Vercel Blob store to this project for all environments, then redeploy.',
+            },
+            { status: 400 },
+          )
+        }
         const body = (await request.json()) as HandleUploadBody
         try {
           const jsonResponse = await handleUpload({
@@ -33,6 +45,7 @@ export const Route = createFileRoute('/api/blob-upload')({
           })
           return Response.json(jsonResponse)
         } catch (error) {
+          console.error('[crn] /api/blob-upload failed:', error)
           return Response.json({ error: (error as Error).message }, { status: 400 })
         }
       },
