@@ -90,6 +90,13 @@ function blobUploadsAvailable(): Promise<boolean> {
   return blobMode
 }
 
+// Read the session cookie (crn_session) for auth on Vercel Blob uploads.
+function getSessionCookie(): string | undefined {
+  if (typeof document === 'undefined') return undefined
+  const match = document.cookie.match(/(?:^|; )crn_session=([^;]*)/)
+  return match ? match[1] : undefined
+}
+
 export async function uploadMedia(
   file: File,
   maxSize = 2000,
@@ -106,11 +113,13 @@ export async function uploadMedia(
       const { upload } = await import('@vercel/blob/client')
       const ext = fileExt(file.name) || (isVideo ? 'mp4' : 'bin')
       const pathname = `media/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}.${ext}`
+      const sessionCookie = getSessionCookie()
       const blob = await upload(pathname, body, {
         access: 'public',
         handleUploadUrl: '/api/blob-upload',
         contentType,
         multipart: isVideo,
+        headers: sessionCookie ? { cookie: `crn_session=${sessionCookie}` } : undefined,
         onUploadProgress: (event) => onProgress?.(Math.round(event.percentage)),
       })
       return blob.url
