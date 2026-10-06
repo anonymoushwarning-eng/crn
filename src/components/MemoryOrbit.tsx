@@ -3,6 +3,11 @@ import { imageUrl } from '@/lib/client'
 
 const FRAME_COUNT = 10
 
+// World-space lift for the whole 3D scene. Raises the orbit (and core/rings)
+// above the hero's text block so the photos no longer cross the "CRN SOCIETY"
+// heading. Tune this single value to move the ring up or down.
+const SCENE_LIFT = 2.4
+
 /** Canvas texture used when there are fewer pictures than frames. */
 function placeholderCanvas(i: number) {
   const c = document.createElement('canvas')
@@ -48,6 +53,12 @@ export function MemoryOrbit({ imageKeys }: { imageKeys: string[] }) {
       const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100)
       camera.position.set(0, 0.6, 11)
 
+      // Everything lives in one group so the whole composition can be lifted
+      // above the hero copy without disturbing the camera/parallax behaviour.
+      const root = new THREE.Group()
+      root.position.y = SCENE_LIFT
+      scene.add(root)
+
       // Glowing wireframe core.
       const core = new THREE.Group()
       const coreGeo = new THREE.IcosahedronGeometry(1.35, 1)
@@ -65,7 +76,7 @@ export function MemoryOrbit({ imageKeys }: { imageKeys: string[] }) {
         new THREE.MeshBasicMaterial({ color: 0xf3efe8, wireframe: true }),
       )
       core.add(coreWire, coreSolid, inner)
-      scene.add(core)
+      root.add(core)
 
       // Thin orbit rings.
       const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.12 })
@@ -74,12 +85,12 @@ export function MemoryOrbit({ imageKeys }: { imageKeys: string[] }) {
       ring1.rotation.x = Math.PI / 2
       const ring2 = new THREE.Mesh(new THREE.TorusGeometry(2.4, 0.005, 8, 120), ringMat)
       ring2.rotation.set(Math.PI / 2.6, 0.4, 0)
-      scene.add(ring1, ring2)
+      root.add(ring1, ring2)
 
       // Ring of polaroid-style memory frames.
       const orbit = new THREE.Group()
       orbit.rotation.x = 0.18
-      scene.add(orbit)
+      root.add(orbit)
       const loader = new THREE.TextureLoader()
       const frameGeo = new THREE.PlaneGeometry(1.5, 1.85)
       const photoGeo = new THREE.PlaneGeometry(1.34, 1.5)
@@ -117,7 +128,7 @@ export function MemoryOrbit({ imageKeys }: { imageKeys: string[] }) {
       dustGeo.setAttribute('position', new THREE.BufferAttribute(pts, 3))
       const dustMat = new THREE.PointsMaterial({ color: 0xf3efe8, size: 0.025, transparent: true, opacity: 0.5 })
       const dust = new THREE.Points(dustGeo, dustMat)
-      scene.add(dust)
+      root.add(dust)
       disposables.push(dustGeo, dustMat)
 
       const pointer = { x: 0, y: 0 }

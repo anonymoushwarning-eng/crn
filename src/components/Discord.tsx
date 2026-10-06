@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, Copy, Images, MessageCircle, ShieldCheck, Users } from 'lucide-react'
 import { DISCORD_INVITE, getDiscordStats, type DiscordStats } from '@/server/discord.functions'
 
@@ -156,7 +157,13 @@ export function DiscordSection({ stats }: { stats: DiscordStats | null }) {
 
 /** Fixed pill at the bottom of the page linking to the Discord invite with live counts. */
 export function FloatingJoin({ stats }: { stats: DiscordStats | null }) {
-  return (
+  // Rendered through a portal so page-transition transforms never turn the
+  // wrapper into the containing block for this fixed element.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  if (!mounted) return null
+
+  return createPortal(
     <a
       href={DISCORD_INVITE}
       target="_blank"
@@ -190,6 +197,7 @@ export function FloatingJoin({ stats }: { stats: DiscordStats | null }) {
           </span>
         </span>
       </span>
-    </a>
+    </a>,
+    document.body,
   )
 }

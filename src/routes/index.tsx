@@ -6,6 +6,7 @@ import type { FeedPost, MediaItem } from '@/lib/types'
 import { MemoryOrbit } from '@/components/MemoryOrbit'
 import { PostCard } from '@/components/PostCard'
 import { Lightbox } from '@/components/Lightbox'
+import { Reveal } from '@/components/Reveal'
 import { DiscordSection, FloatingJoin, useDiscordStats } from '@/components/Discord'
 
 export const Route = createFileRoute('/')({
@@ -66,27 +67,33 @@ function Home() {
         </div>
       </section>
 
-      <DiscordSection stats={discord} />
+      <Reveal>
+        <DiscordSection stats={discord} />
+      </Reveal>
 
       <section id="memories" className="mx-auto max-w-6xl scroll-mt-20 px-5 pt-16 pb-28 sm:px-8">
-        <div className="mb-10 flex items-end justify-between gap-4 border-b border-line pb-6">
-          <h2 className="font-display text-2xl font-semibold sm:text-3xl">The timeline</h2>
-          {me && (
-            <Link to="/dashboard" search={{ tab: 'new' }} className="btn-primary">
-              <ImagePlus size={16} /> New post
-            </Link>
-          )}
-        </div>
+        <Reveal>
+          <div className="mb-10 flex items-end justify-between gap-4 border-b border-line pb-6">
+            <h2 className="font-display text-2xl font-semibold sm:text-3xl">The timeline</h2>
+            {me && (
+              <Link to="/dashboard" search={{ tab: 'new' }} className="btn-primary">
+                <ImagePlus size={16} /> New post
+              </Link>
+            )}
+          </div>
+        </Reveal>
 
         {posts.length === 0 ? (
-          <div className="flex flex-col items-center rounded-[28px] border border-dashed border-line px-6 py-24 text-center">
-            <div className="mb-6 h-16 w-16 rotate-12 rounded-2xl border border-ember/50 bg-ember/10 [transform:perspective(400px)_rotateX(20deg)_rotateZ(12deg)]" />
-            <h3 className="font-display text-xl">No memories yet</h3>
-            <p className="mt-2 max-w-sm text-mute">
-              The first picture and story will appear here as soon as the admin or a member
-              posts it.
-            </p>
-          </div>
+          <Reveal>
+            <div className="flex flex-col items-center rounded-[28px] border border-dashed border-line px-6 py-24 text-center">
+              <div className="mb-6 h-16 w-16 rotate-12 rounded-2xl border border-ember/50 bg-ember/10 [transform:perspective(400px)_rotateX(20deg)_rotateZ(12deg)]" />
+              <h3 className="font-display text-xl">No memories yet</h3>
+              <p className="mt-2 max-w-sm text-mute">
+                The first picture and story will appear here as soon as the admin or a member
+                posts it.
+              </p>
+            </div>
+          </Reveal>
         ) : (
           <div className="columns-1 gap-6 md:columns-2 lg:columns-3">
             {posts.map((post: FeedPost, i: number) => (
@@ -96,9 +103,11 @@ function Home() {
         )}
       </section>
 
-      <footer className="border-t border-line pt-10 pb-28 text-center text-xs tracking-[0.3em] text-mute">
-        CRN SOCIETY · EST. ON FACEBOOK
-      </footer>
+      <Reveal>
+        <footer className="border-t border-line pt-10 pb-28 text-center text-xs tracking-[0.3em] text-mute">
+          CRN SOCIETY · EST. ON FACEBOOK
+        </footer>
+      </Reveal>
 
       <FloatingJoin stats={discord} />
 

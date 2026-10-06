@@ -187,7 +187,7 @@ export function ParticleField({ count }: { count?: number }) {
     <div
       ref={mountRef}
       aria-hidden
-      className="pointer-events-none fixed inset-0 z-0 opacity-70 [mix-blend-mode:screen]"
+      className="pointer-events-none fixed inset-0 z-[1] opacity-70 [mix-blend-mode:screen]"
     />
   )
 }

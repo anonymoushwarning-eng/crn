@@ -1,6 +1,15 @@
-import { HeadContent, Link, Outlet, Scripts, createRootRoute } from '@tanstack/react-router'
+import { useEffect, useRef } from 'react'
+import {
+  HeadContent,
+  Link,
+  Outlet,
+  Scripts,
+  createRootRoute,
+  useRouterState,
+} from '@tanstack/react-router'
 import { getMe } from '@/server/auth.functions'
 import { SiteMenu } from '@/components/SiteMenu'
+import { MetallicBackground } from '@/components/MetallicBackground'
 import { ParticleField } from '@/components/ParticleField'
 
 import '../styles.css'
@@ -57,14 +66,50 @@ function NotFound() {
 function RootLayout() {
   return (
     <>
+      {/* Layered back-to-front: metallic shader → particles → UI. */}
+      <MetallicBackground />
       <ParticleField />
-      {/* Content sits above the fixed particle layer. */}
+      {/* Content sits above the fixed background layers. */}
       <div className="relative z-10">
         <SiteMenu />
-        <Outlet />
+        <PageTransition>
+          <Outlet />
+        </PageTransition>
       </div>
     </>
   )
+}
+
+/**
+ * Replays a smooth "pop up from below" animation each time the route path
+ * changes. Keying off the pathname (not the full href) means tab changes that
+ * only alter the query string, like the dashboard tabs, don't re-trigger it.
+ */
+function PageTransition({ children }: { children: React.ReactNode }) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const ref = useRef<HTMLDivElement>(null)
+  const firstRender = useRef(true)
+
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false
+      return
+    }
+    const el = ref.current
+    if (!el) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+    const animation = el.animate(
+      [
+        { opacity: 0, transform: 'translateY(30px)' },
+        { opacity: 1, transform: 'translateY(0)' },
+      ],
+      { duration: 550, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+    )
+    return () => animation.cancel()
+  }, [pathname])
+
+  return <div ref={ref}>{children}</div>
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {

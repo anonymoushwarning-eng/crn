@@ -7,6 +7,7 @@ import { Avatar } from './Avatar'
 import { LocalTime } from './LocalTime'
 import { Reactions } from './Reactions'
 import { ShareButton } from './ShareButton'
+import { useReveal } from './Reveal'
 
 interface PostCardProps {
   post: FeedPost
@@ -22,6 +23,7 @@ function getMediaItems(post: FeedPost): MediaItem[] {
 
 export function PostCard({ post, index, onOpenMedia }: PostCardProps) {
   const ref = useRef<HTMLElement>(null)
+  const reveal = useReveal<HTMLDivElement>()
   const [expanded, setExpanded] = useState(false)
   const long = post.story.length > 280
   const mediaItems = getMediaItems(post)
@@ -81,7 +83,11 @@ export function PostCard({ post, index, onOpenMedia }: PostCardProps) {
   }
 
   return (
-    <div className="rise mb-6 break-inside-avoid" style={{ animationDelay: `${Math.min(index, 8) * 70}ms` }}>
+    <div
+      ref={reveal.ref}
+      className={`${reveal.className} mb-6 break-inside-avoid`}
+      style={{ transitionDelay: `${Math.min(index, 6) * 60}ms` }}
+    >
       <article
         ref={ref}
         onPointerMove={onMove}
