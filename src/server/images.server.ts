@@ -83,6 +83,15 @@ export async function saveImage(data: ArrayBuffer, contentType: string) {
     return blob.url
   }
 
+  // On Vercel the filesystem is ephemeral and shared across deployments via the
+  // database, so a disk key would immediately 404 elsewhere. Refuse the upload
+  // instead of writing an unusable key into the database.
+  if (process.env.VERCEL) {
+    throw new Error(
+      'Media storage is not configured for this deployment. Connect a Vercel Blob store (BLOB_READ_WRITE_TOKEN) to every environment, then redeploy.',
+    )
+  }
+
   const key = randomUUID()
   // contentType is kept in a sidecar so the media can be served with the right header.
   writeFileSync(imageFile(key), buffer)
