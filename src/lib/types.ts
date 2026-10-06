@@ -13,11 +13,23 @@ export type Author = {
   avatarKey: string | null
 }
 
+export type MediaItem = {
+  type: 'image' | 'video'
+  key: string
+  order: number
+  width?: number
+  height?: number
+  duration?: number
+}
+
 export type FeedPost = {
   id: number
   title: string
   story: string
+  // Legacy single image key (for backward compatibility)
   imageKey: string | null
+  // New: array of media items
+  mediaKeys: MediaItem[]
   postedAt: string
   author: Author
   counts: Record<ReactionKind, number>

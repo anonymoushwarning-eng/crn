@@ -1,12 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, createFileRoute, notFound } from '@tanstack/react-router'
-import { ArrowLeft, LayoutGrid } from 'lucide-react'
+import { ArrowLeft, LayoutGrid, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getPost } from '@/server/feed.functions'
-import { imageUrl } from '@/lib/client'
+import { imageUrl, rawImageUrl } from '@/lib/client'
 import { Avatar } from '@/components/Avatar'
 import { LocalTime } from '@/components/LocalTime'
 import { Reactions } from '@/components/Reactions'
 import { ShareButton } from '@/components/ShareButton'
+import type { MediaItem } from '@/lib/types'
 
 export const Route = createFileRoute('/post/$postId')({
   loader: async ({ params }) => {
@@ -22,6 +23,8 @@ export const Route = createFileRoute('/post/$postId')({
     const description =
       loaderData.story.slice(0, 160) ||
       `A memory shared by ${loaderData.author.name} on the CRN SOCIETY timeline.`
+    const firstImage =
+      loaderData.mediaKeys?.find((m: MediaItem) => m.type === 'image')?.key ?? loaderData.imageKey
     return {
       meta: [
         { title: `${title} · CRN SOCIETY` },
@@ -29,9 +32,7 @@ export const Route = createFileRoute('/post/$postId')({
         { property: 'og:title', content: title },
         { property: 'og:description', content: description },
         { property: 'og:type', content: 'article' },
-        ...(loaderData.imageKey
-          ? [{ property: 'og:image', content: imageUrl(loaderData.imageKey, 1200) }]
-          : []),
+        ...(firstImage ? [{ property: 'og:image', content: imageUrl(firstImage, 1200) }] : []),
       ],
     }
   },
@@ -54,8 +55,10 @@ function PostPage() {
       }
       el.setAttribute('content', content)
     }
+    const firstImage =
+      post.mediaKeys?.find((m: MediaItem) => m.type === 'image')?.key ?? post.imageKey
     setMeta('og:url', url)
-    if (post.imageKey) setMeta('og:image', `${window.location.origin}${imageUrl(post.imageKey, 1200)}`)
+    if (firstImage) setMeta('og:image', `${window.location.origin}${imageUrl(firstImage, 1200)}`)
     let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]')
     if (!canonical) {
       canonical = document.createElement('link')
@@ -63,7 +66,32 @@ function PostPage() {
       document.head.appendChild(canonical)
     }
     canonical.href = url
-  }, [post.imageKey])
+  }, [post.imageKey, post.mediaKeys])
+
+  const [currentIndex, setCurrentIndex] = useState(0)
+
+  const mediaItems: MediaItem[] = post.mediaKeys?.length
+    ? post.mediaKeys
+    : post.imageKey
+      ? [{ type: 'image', key: post.imageKey, order: 0 }]
+      : []
+
+  const total = mediaItems.length
+  const safeIndex = Math.min(currentIndex, Math.max(0, total - 1))
+  const currentMedia = mediaItems[safeIndex]
+  const isVideo = currentMedia?.type === 'video'
+  const canGoPrev = safeIndex > 0
+  const canGoNext = safeIndex < total - 1
+  const hasMultiple = total > 1
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') setCurrentIndex((i) => Math.max(0, i - 1))
+      else if (e.key === 'ArrowRight') setCurrentIndex((i) => Math.min(total - 1, i + 1))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [total])
 
   return (
     <main className="mx-auto max-w-3xl px-5 pt-28 pb-24 sm:px-8">
@@ -85,13 +113,79 @@ function PostPage() {
           <ShareButton postId={post.id} title={post.title} />
         </header>
 
-        {post.imageKey && (
-          <div className="bg-ink-3">
-            <img
-              src={imageUrl(post.imageKey, 1600)}
-              alt={post.title || `Memory shared by ${post.author.name}`}
-              className="w-full object-cover"
-            />
+        {total > 0 && (
+          <div className="relative bg-ink-3">
+            {isVideo ? (
+              <video
+                key={currentMedia.key}
+                src={rawImageUrl(currentMedia.key)}
+                controls
+                playsInline
+                preload="metadata"
+                className="max-h-[70vh] w-full object-contain"
+              />
+            ) : (
+              <img
+                key={currentMedia.key}
+                src={imageUrl(currentMedia.key, 1600)}
+                alt={post.title || `Memory shared by ${post.author.name}`}
+                className="max-h-[70vh] w-full object-contain"
+              />
+            )}
+
+            {hasMultiple && (
+              <>
+                <button
+                  onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
+                  disabled={!canGoPrev}
+                  aria-label="Previous"
+                  className="absolute left-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-ink/70 text-paper transition hover:bg-ember hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <ChevronLeft size={22} />
+                </button>
+                <button
+                  onClick={() => setCurrentIndex((i) => Math.min(total - 1, i + 1))}
+                  disabled={!canGoNext}
+                  aria-label="Next"
+                  className="absolute right-3 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-ink/70 text-paper transition hover:bg-ember hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <ChevronRight size={22} />
+                </button>
+                <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 -translate-x-1/2 rounded-full bg-ink/80 px-3.5 py-1 text-xs font-medium text-paper backdrop-blur-sm">
+                  {safeIndex + 1} / {total}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Thumbnail strip for multiple media */}
+        {hasMultiple && (
+          <div className="border-t border-line bg-ink-3/50 px-5 py-4">
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {mediaItems.map((item, idx) => (
+                <button
+                  key={`${item.key}-${idx}`}
+                  onClick={() => setCurrentIndex(idx)}
+                  className={`relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg border-2 transition sm:h-20 sm:w-20 ${
+                    idx === safeIndex ? 'border-ember' : 'border-line/40 hover:border-ember/60'
+                  }`}
+                  aria-label={`Go to media ${idx + 1}`}
+                  aria-current={idx === safeIndex ? 'true' : 'false'}
+                >
+                  {item.type === 'image' ? (
+                    <img src={imageUrl(item.key, 200)} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <video src={rawImageUrl(item.key)} className="h-full w-full object-cover" muted preload="metadata" />
+                  )}
+                  {item.type === 'video' && (
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/30 text-xs text-paper">
+                      ▶
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

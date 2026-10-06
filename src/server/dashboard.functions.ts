@@ -6,12 +6,37 @@ import { posts, sessions, users } from '../../db/schema.js'
 import { hashPassword, requireAdmin, requireUser, visitorId } from './auth.server'
 import { deleteImage } from './images.server'
 import { loadPosts } from './posts.server'
-import type { Member } from '@/lib/types'
+import type { Member, MediaItem } from '@/lib/types'
 
 const isoDate = z.string().datetime({ offset: true })
 
 // A stored image is either a local UUID key or an absolute URL (Vercel Blob).
 const imageRef = z.union([z.string().uuid(), z.string().url()]).nullable()
+
+// Media item: { type: 'image'|'video', key: string, order: number, width?, height?, duration? }
+const mediaItem = z.object({
+  type: z.enum(['image', 'video']),
+  key: z.union([z.string().uuid(), z.string().url()]),
+  order: z.number().int().nonnegative(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  duration: z.number().positive().optional(),
+})
+
+const mediaArray = z.array(mediaItem).max(10).default([])
+
+/** Normalize a stored media column (array, JSON text, or legacy double-encoded text). */
+function mediaList(raw: unknown): MediaItem[] {
+  let value: unknown = raw
+  for (let i = 0; i < 2 && typeof value === 'string'; i++) {
+    try {
+      value = JSON.parse(value)
+    } catch {
+      return []
+    }
+  }
+  return Array.isArray(value) ? (value as MediaItem[]) : []
+}
 
 /** Admins manage every post; members manage their own. */
 export const getManagedPosts = createServerFn({ method: 'GET' }).handler(async () => {
@@ -27,14 +52,22 @@ export const createPost = createServerFn({ method: 'POST' })
     z.object({
       title: z.string().trim().max(140),
       story: z.string().trim().max(10000),
+      mediaKeys: mediaArray,
+      // Legacy: single imageKey for backward compat
       imageKey: imageRef,
       postedAt: isoDate.optional(),
     }),
   )
   .handler(async ({ data }) => {
     const me = await requireUser()
-    if (!data.title && !data.story && !data.imageKey) {
-      throw new Error('Add a picture, a title or a story.')
+    // Backward compat: if no mediaKeys but imageKey provided, convert
+    const mediaKeys = data.mediaKeys.length > 0
+      ? data.mediaKeys
+      : data.imageKey
+        ? [{ type: 'image' as const, key: data.imageKey, order: 0 }]
+        : []
+    if (!data.title && !data.story && mediaKeys.length === 0) {
+      throw new Error('Add a picture, a video, a title or a story.')
     }
     const [post] = await db
       .insert(posts)
@@ -42,7 +75,7 @@ export const createPost = createServerFn({ method: 'POST' })
         authorId: me.id,
         title: data.title,
         story: data.story,
-        imageKey: data.imageKey,
+        mediaKeys,
         // Only the admin may choose a custom date/time.
         postedAt: me.role === 'admin' && data.postedAt ? new Date(data.postedAt) : new Date(),
       })
@@ -66,23 +99,40 @@ export const updatePost = createServerFn({ method: 'POST' })
       id: z.number().int(),
       title: z.string().trim().max(140),
       story: z.string().trim().max(10000),
+      mediaKeys: mediaArray,
+      // Legacy: single imageKey for backward compat
       imageKey: imageRef,
       postedAt: isoDate.optional(),
     }),
   )
   .handler(async ({ data }) => {
     const { me, post } = await ownedPost(data.id)
+    // Backward compat: if no mediaKeys but imageKey provided, convert
+    const mediaKeys = data.mediaKeys.length > 0
+      ? data.mediaKeys
+      : data.imageKey
+        ? [{ type: 'image' as const, key: data.imageKey, order: 0 }]
+        : []
     const changes: Partial<typeof posts.$inferInsert> = {
       title: data.title,
       story: data.story,
-      imageKey: data.imageKey,
+      mediaKeys,
     }
     if (data.postedAt) {
       if (me.role !== 'admin') throw new Error('Only the admin can change the date and time.')
       changes.postedAt = new Date(data.postedAt)
     }
     await db.update(posts).set(changes).where(eq(posts.id, data.id))
-    if (post.imageKey !== data.imageKey) await deleteImage(post.imageKey)
+    // Delete old media that is no longer referenced.
+    const oldMediaKeys = mediaList(post.mediaKeys)
+    const oldKeys = oldMediaKeys.length
+      ? oldMediaKeys.map((m) => m.key)
+      : post.imageKey
+        ? [post.imageKey]
+        : []
+    const newKeys = mediaKeys.map((m) => m.key)
+    const toDelete = oldKeys.filter((k) => !newKeys.includes(k))
+    await Promise.all(toDelete.map(deleteImage))
     return { ok: true }
   })
 
@@ -91,7 +141,10 @@ export const deletePost = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { post } = await ownedPost(data.id)
     await db.delete(posts).where(eq(posts.id, data.id))
-    await deleteImage(post.imageKey)
+    // Delete all media associated with the post.
+    const mediaKeys = mediaList(post.mediaKeys)
+    const keys = mediaKeys.length ? mediaKeys.map((m) => m.key) : post.imageKey ? [post.imageKey] : []
+    await Promise.all(keys.map(deleteImage))
     return { ok: true }
   })
 
@@ -184,11 +237,18 @@ export const deleteMember = createServerFn({ method: 'POST' })
     const [target] = await db.select().from(users).where(eq(users.id, data.id))
     if (!target) throw new Error('Member not found.')
     const theirPosts = await db
-      .select({ imageKey: posts.imageKey })
+      .select({ imageKey: posts.imageKey, mediaKeys: posts.mediaKeys })
       .from(posts)
       .where(eq(posts.authorId, data.id))
     // Posts, sessions and reactions cascade with the user row.
     await db.delete(users).where(eq(users.id, data.id))
-    await Promise.all([target.avatarKey, ...theirPosts.map((p) => p.imageKey)].map(deleteImage))
+    const allKeys = [
+      target.avatarKey,
+      ...theirPosts.flatMap((p) => {
+        const media = mediaList(p.mediaKeys)
+        return media.length ? media.map((m) => m.key) : p.imageKey ? [p.imageKey] : []
+      }),
+    ].filter(Boolean)
+    await Promise.all(allKeys.map(deleteImage))
     return { ok: true }
   })

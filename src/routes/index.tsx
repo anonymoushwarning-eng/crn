@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { ArrowDown, ImagePlus } from 'lucide-react'
 import { getFeed } from '@/server/feed.functions'
-import type { FeedPost } from '@/lib/types'
+import type { FeedPost, MediaItem } from '@/lib/types'
 import { MemoryOrbit } from '@/components/MemoryOrbit'
 import { PostCard } from '@/components/PostCard'
 import { Lightbox } from '@/components/Lightbox'
@@ -17,9 +17,12 @@ function Home() {
   const posts = Route.useLoaderData()
   const { me } = Route.useRouteContext()
   const discord = useDiscordStats()
-  const [viewing, setViewing] = useState<FeedPost | null>(null)
+  const [viewing, setViewing] = useState<{ post: FeedPost; initialIndex?: number } | null>(null)
   const close = useCallback(() => setViewing(null), [])
-  const imageKeys = posts.flatMap((p) => (p.imageKey ? [p.imageKey] : []))
+  // For MemoryOrbit, use all image keys from mediaKeys
+  const imageKeys = posts.flatMap((p: FeedPost) =>
+    p.mediaKeys?.filter((m: MediaItem) => m.type === 'image').map((m: MediaItem) => m.key) ?? (p.imageKey ? [p.imageKey] : [])
+  )
 
   return (
     <main>
@@ -86,8 +89,8 @@ function Home() {
           </div>
         ) : (
           <div className="columns-1 gap-6 md:columns-2 lg:columns-3">
-            {posts.map((post, i) => (
-              <PostCard key={post.id} post={post} index={i} onOpenImage={setViewing} />
+            {posts.map((post: FeedPost, i: number) => (
+              <PostCard key={post.id} post={post} index={i} onOpenMedia={(p, idx) => setViewing({ post: p, initialIndex: idx })} />
             ))}
           </div>
         )}
@@ -99,7 +102,7 @@ function Home() {
 
       <FloatingJoin stats={discord} />
 
-      {viewing && <Lightbox post={viewing} onClose={close} />}
+      {viewing && <Lightbox post={viewing.post} onClose={close} />}
     </main>
   )
 }

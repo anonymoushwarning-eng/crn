@@ -30,6 +30,7 @@ const DDL = [
     title TEXT NOT NULL DEFAULT '',
     story TEXT NOT NULL DEFAULT '',
     image_key TEXT,
+    media_keys TEXT,
     posted_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
     created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
   )`,
@@ -43,6 +44,11 @@ const DDL = [
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS reactions_unique_idx ON reactions(post_id, kind, visitor_id)`,
   `CREATE INDEX IF NOT EXISTS reactions_post_idx ON reactions(post_id)`,
+]
+
+// Migration: add media_keys column if it doesn't exist (for existing databases)
+const MIGRATIONS = [
+  `ALTER TABLE posts ADD COLUMN media_keys TEXT`,
 ]
 
 // Deployed sites (Vercel) have no shared disk, so they talk to a hosted Turso
@@ -62,6 +68,14 @@ async function createDb(): Promise<LibSQLDatabase<typeof schema>> {
     const client = createClient({ url: tursoUrl, authToken: tursoToken })
     try {
       await client.batch(DDL, 'write')
+      // Run migrations
+      for (const migration of MIGRATIONS) {
+        try {
+          await client.execute(migration)
+        } catch {
+          // Column might already exist, ignore
+        }
+      }
     } catch (error) {
       // Two cold starts can race to create the schema; if it already exists we're fine.
       const check = await client.execute(
@@ -86,6 +100,14 @@ async function createDb(): Promise<LibSQLDatabase<typeof schema>> {
   const sqlite = new DatabaseSync(DB_PATH)
   sqlite.exec('PRAGMA foreign_keys = ON')
   sqlite.exec(DDL.join(';\n'))
+  // Run migrations
+  for (const migration of MIGRATIONS) {
+    try {
+      sqlite.exec(migration)
+    } catch {
+      // Column might already exist, ignore
+    }
+  }
   return drizzle({ client: sqlite, schema }) as unknown as LibSQLDatabase<typeof schema>
 }
 

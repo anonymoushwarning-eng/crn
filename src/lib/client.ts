@@ -23,7 +23,7 @@ export function postUrl(id: number) {
 }
 
 /** Shrinks big photos in the browser before upload so posts stay fast. */
-async function compress(file: File, maxSize: number): Promise<Blob> {
+async function compressImage(file: File, maxSize: number): Promise<Blob> {
   if (file.type === 'image/gif') return file
   try {
     const bitmap = await createImageBitmap(file)
@@ -39,16 +39,99 @@ async function compress(file: File, maxSize: number): Promise<Blob> {
   }
 }
 
-export async function uploadImage(file: File, maxSize = 2000): Promise<string> {
-  const body = await compress(file, maxSize)
+const EXT_TYPES: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  avif: 'image/avif',
+  mp4: 'video/mp4',
+  m4v: 'video/x-m4v',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  avi: 'video/x-msvideo',
+  mkv: 'video/x-matroska',
+  flv: 'video/x-flv',
+  wmv: 'video/x-ms-wmv',
+  '3gp': 'video/3gpp',
+  '3g2': 'video/3gpp2',
+  mpg: 'video/mpeg',
+  mpeg: 'video/mpeg',
+  ogv: 'video/ogg',
+  ts: 'video/mp2t',
+  m2ts: 'video/mp2t',
+}
+
+const fileExt = (name: string) => name.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? ''
+
+/** Browsers sometimes omit `file.type` (e.g. .mkv), so fall back to the extension. */
+function resolveType(file: File) {
+  return file.type || EXT_TYPES[fileExt(file.name)] || 'application/octet-stream'
+}
+
+/** Whether a picked file should be treated as a video (type or extension). */
+export function isVideoFile(file: File) {
+  return resolveType(file).startsWith('video/')
+}
+
+// Serverless functions reject large request bodies (Vercel caps them around
+// 4.5 MB), so anything above this goes straight from the browser to Vercel Blob.
+const INLINE_LIMIT = 3.5 * 1024 * 1024
+
+let blobMode: Promise<boolean> | null = null
+function blobUploadsAvailable(): Promise<boolean> {
+  if (!blobMode) {
+    blobMode = fetch('/api/upload')
+      .then((r) => (r.ok ? r.json() : { blob: false }))
+      .then((j) => Boolean((j as { blob?: boolean }).blob))
+      .catch(() => false)
+  }
+  return blobMode
+}
+
+export async function uploadMedia(
+  file: File,
+  maxSize = 2000,
+  onProgress?: (percent: number) => void,
+): Promise<string> {
+  const declaredType = resolveType(file)
+  const isVideo = declaredType.startsWith('video/')
+  const imageFile = file.type ? file : new File([file], file.name, { type: declaredType })
+  const body: Blob = isVideo ? file : await compressImage(imageFile, maxSize)
+  const contentType = body.type || declaredType
+
+  if ((isVideo || body.size > INLINE_LIMIT) && (await blobUploadsAvailable())) {
+    try {
+      const { upload } = await import('@vercel/blob/client')
+      const ext = fileExt(file.name) || (isVideo ? 'mp4' : 'bin')
+      const pathname = `media/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}.${ext}`
+      const blob = await upload(pathname, body, {
+        access: 'public',
+        handleUploadUrl: '/api/blob-upload',
+        contentType,
+        multipart: isVideo,
+        onUploadProgress: (event) => onProgress?.(Math.round(event.percentage)),
+      })
+      return blob.url
+    } catch {
+      // Fall back to the server route below (works locally and for small files).
+    }
+  }
+
   const res = await fetch('/api/upload', {
     method: 'POST',
-    headers: { 'Content-Type': body.type || file.type },
+    headers: { 'Content-Type': contentType },
     body,
   })
   const json = (await res.json().catch(() => ({}))) as { key?: string; error?: string }
   if (!res.ok || !json.key) throw new Error(json.error ?? 'Upload failed.')
   return json.key
+}
+
+// Backward compatibility
+export async function uploadImage(file: File, maxSize = 2000): Promise<string> {
+  return uploadMedia(file, maxSize)
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')

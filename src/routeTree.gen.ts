@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ApiBlobUploadRouteImport } from './routes/api/blob-upload'
 import { Route as ApiUploadRouteImport } from './routes/api/upload'
 import { Route as PostPostIdRouteImport } from './routes/post.$postId'
 import { Route as ApiImagesKeyRouteImport } from './routes/api/images/$key'
@@ -29,6 +30,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBlobUploadRoute = ApiBlobUploadRouteImport.update({
+  id: '/api/blob-upload',
+  path: '/api/blob-upload',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUploadRoute = ApiUploadRouteImport.update({
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/api/blob-upload': typeof ApiBlobUploadRoute
   '/api/upload': typeof ApiUploadRoute
   '/post/$postId': typeof PostPostIdRoute
   '/api/images/$key': typeof ApiImagesKeyRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/api/blob-upload': typeof ApiBlobUploadRoute
   '/api/upload': typeof ApiUploadRoute
   '/post/$postId': typeof PostPostIdRoute
   '/api/images/$key': typeof ApiImagesKeyRoute
@@ -68,6 +76,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
   '/login': typeof LoginRoute
+  '/api/blob-upload': typeof ApiBlobUploadRoute
   '/api/upload': typeof ApiUploadRoute
   '/post/$postId': typeof PostPostIdRoute
   '/api/images/$key': typeof ApiImagesKeyRoute
@@ -78,6 +87,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/login'
+    | '/api/blob-upload'
     | '/api/upload'
     | '/post/$postId'
     | '/api/images/$key'
@@ -86,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/login'
+    | '/api/blob-upload'
     | '/api/upload'
     | '/post/$postId'
     | '/api/images/$key'
@@ -94,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dashboard'
     | '/login'
+    | '/api/blob-upload'
     | '/api/upload'
     | '/post/$postId'
     | '/api/images/$key'
@@ -103,6 +115,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
   LoginRoute: typeof LoginRoute
+  ApiBlobUploadRoute: typeof ApiBlobUploadRoute
   ApiUploadRoute: typeof ApiUploadRoute
   PostPostIdRoute: typeof PostPostIdRoute
   ApiImagesKeyRoute: typeof ApiImagesKeyRoute
@@ -129,6 +142,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/blob-upload': {
+      id: '/api/blob-upload'
+      path: '/api/blob-upload'
+      fullPath: '/api/blob-upload'
+      preLoaderRoute: typeof ApiBlobUploadRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/upload': {
@@ -159,6 +179,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
   LoginRoute: LoginRoute,
+  ApiBlobUploadRoute: ApiBlobUploadRoute,
   ApiUploadRoute: ApiUploadRoute,
   PostPostIdRoute: PostPostIdRoute,
   ApiImagesKeyRoute: ApiImagesKeyRoute,

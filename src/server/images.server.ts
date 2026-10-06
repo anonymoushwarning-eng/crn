@@ -6,8 +6,13 @@ import { dataDir } from './dataDir.server'
 const IMAGES_DIR = join(dataDir(), 'images')
 mkdirSync(IMAGES_DIR, { recursive: true })
 
-const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']
+const ALLOWED_IMAGES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
+export const MAX_VIDEO_BYTES = 400 * 1024 * 1024
+
+function isVideoType(contentType: string) {
+  return contentType.startsWith('video/')
+}
 
 // On Vercel the filesystem is ephemeral, so uploads go to Vercel Blob once a
 // store is connected to the project. Connected stores inject either a static
@@ -24,6 +29,9 @@ if (process.env.VERCEL && !useBlob) {
   )
 }
 
+/** True when uploads are stored in Vercel Blob (static token or OIDC). */
+export const blobEnabled = () => useBlob
+
 /** Already-hosted image URL (e.g. a Vercel Blob URL) rather than a local key. */
 export const isRemoteImage = (key: string) => /^https?:\/\//i.test(key)
 
@@ -36,8 +44,16 @@ function metaFile(key: string) {
 }
 
 function assertAllowed(data: ArrayBuffer, contentType: string) {
-  if (!ALLOWED.includes(contentType)) throw new Error('Unsupported image type.')
-  if (data.byteLength > MAX_IMAGE_BYTES) throw new Error('Image is larger than 10 MB.')
+  const isVideo = isVideoType(contentType)
+  if (!isVideo && !ALLOWED_IMAGES.includes(contentType)) {
+    throw new Error('Unsupported media type.')
+  }
+  const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES
+  if (data.byteLength > maxBytes) {
+    throw new Error(
+      `${isVideo ? 'Video' : 'Image'} is larger than ${maxBytes / (1024 * 1024)} MB.`,
+    )
+  }
 }
 
 export async function saveImage(data: ArrayBuffer, contentType: string) {
@@ -46,7 +62,8 @@ export async function saveImage(data: ArrayBuffer, contentType: string) {
 
   if (useBlob) {
     const { put } = await import('@vercel/blob')
-    const pathname = `images/${randomUUID()}`
+    const ext = contentType.split('/')[1]?.split(';')[0] || 'bin'
+    const pathname = `media/${randomUUID()}.${ext}`
     const blob = await put(pathname, buffer, {
       access: 'public',
       contentType,
@@ -58,7 +75,7 @@ export async function saveImage(data: ArrayBuffer, contentType: string) {
   }
 
   const key = randomUUID()
-  // contentType is kept in a sidecar so the image can be served with the right header.
+  // contentType is kept in a sidecar so the media can be served with the right header.
   writeFileSync(imageFile(key), buffer)
   writeFileSync(metaFile(key), JSON.stringify({ contentType }))
   return key

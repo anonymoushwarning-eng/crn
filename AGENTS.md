@@ -11,20 +11,21 @@ Built with TanStack Start; runs locally or as a self-hosted Node server, and dep
 | Framework | TanStack Start, React 19, TanStack Router (file routes in `src/routes`) |
 | Styling | Tailwind CSS 4 — theme tokens in `src/styles.css` (`ink`, `paper`, `ember`, `mute`, `line`) |
 | Data | SQLite + Drizzle ORM (`db/schema.ts`, `db/index.server.ts`): local `node:sqlite` file `data/crn.db`, or hosted Turso when `TURSO_AUTH_TOKEN` is set |
-| Files | `data/images/` on disk, or Vercel Blob when `BLOB_READ_WRITE_TOKEN` is set (`src/server/images.server.ts`) |
+| Files | `data/images/` on disk, or Vercel Blob when a store is connected (`BLOB_READ_WRITE_TOKEN` or OIDC `BLOB_STORE_ID` + `VERCEL_OIDC_TOKEN`) (`src/server/images.server.ts`) |
 | 3D | three.js, dynamically imported in `src/components/MemoryOrbit.tsx` and `src/components/ParticleField.tsx` |
 
 ## Key directories
 
 - `src/routes/` — `index.tsx` (public feed), `post.$postId.tsx` (public single-memory permalink for sharing),
   `login.tsx`, `dashboard.tsx` (tabs via `?tab=new|posts|members|account`),
-  `api/upload.ts` (raw image upload, session-protected), `api/images/$key.ts` (serves images, immutable cache).
+  `api/upload.ts` (raw media upload, session-protected), `api/blob-upload.ts` (issues client tokens for
+  direct-to-Blob uploads of large files), `api/images/$key.ts` (serves media, immutable cache).
 - `src/server/*.functions.ts` — `createServerFn` RPC endpoints, safe to import from components.
 - `src/server/*.server.ts` — server-only helpers (auth, sessions, image storage, post queries). Never import from client code
   except via `.functions.ts` handlers or server routes.
 - `src/components/` — feed UI; `src/components/ParticleField.tsx` is the global three.js background;
   `src/components/dashboard/` — panel UI.
-- `src/lib/` — shared types and browser helpers (`imageUrl`, `uploadImage`, datetime-local conversion).
+- `src/lib/` — shared types and browser helpers (`imageUrl`, `rawImageUrl`, `uploadMedia`, `isVideoFile`, datetime-local conversion).
 
 ## Non-obvious decisions
 
@@ -34,6 +35,12 @@ Built with TanStack Start; runs locally or as a self-hosted Node server, and dep
   exists. Only the password hash is in source.
 - **Roles**: `admin` can manage every post, members, and post dates (`postedAt`). `member` can only create/edit/delete
   their own posts and can't change dates or emails. All checks live server-side in `dashboard.functions.ts`.
+- **Media**: a post holds 1–10 items, stored in `posts.media_keys` as JSON
+  (`[{ type: 'image'|'video', key, order }]`; `mode: 'json'` so pass an array, never `JSON.stringify` it). Images are
+  downscaled to WebP in the browser; videos are uploaded as-is (any `video/*`, up to 400 MB). The legacy
+  `posts.image_key` column is still read for old rows. Images/videos ≤ ~3.5 MB go through `api/upload.ts`; larger files
+  (and videos on Vercel) upload straight from the browser to Blob via `api/blob-upload.ts` + `@vercel/blob/client`,
+  because serverless functions cap request bodies around 4.5 MB.
 - **SQLite**: `db/index.server.ts` opens `data/crn.db` with Node's built-in `node:sqlite` and creates
   the tables/indexes on startup, so there is no migration pipeline. Keep that DDL in sync with `db/schema.ts`.
   `node:sqlite` is a Node builtin, so it must never reach the browser bundle — anything touching `db`
@@ -55,9 +62,10 @@ Built with TanStack Start; runs locally or as a self-hosted Node server, and dep
 - **Reactions** are anonymous: an httpOnly `crn_visitor` cookie id, unique per (post, kind, visitor) so each visitor can toggle each reaction once.
 - **Dates**: `posts.posted_at` (epoch ms) is what the timeline shows and sorts by. `LocalTime` renders UTC on the server
   and the visitor's timezone after hydration.
-- **Images** are downscaled to WebP in the browser before upload and stored under `data/images/<uuid>` with a
-  `.meta.json` sidecar for the content type. Replaced/deleted images are removed from disk.
-  `imageUrl()` serves the raw route locally; set `VITE_USE_IMAGE_CDN=1` to opt back into a CDN.
+- **Images/videos** are downscaled to WebP in the browser (photos) before upload and stored under `data/images/<uuid>` with a
+  `.meta.json` sidecar for the content type. Replaced/deleted media is removed from disk. Posts show a 1/2/3-up or
+  2×2 “+N” grid; tapping opens the gallery lightbox. `imageUrl()`/`rawImageUrl()` serve the raw route locally (or return
+  Blob URLs as-is); set `VITE_USE_IMAGE_CDN=1` to opt back into a CDN.
 - **Discord stats** come from Discord's public invite endpoint (`discord.gg/crnsociety`, no bot token) via
   `src/server/discord.functions.ts`, cached 60s per instance and fetched client-side so slow Discord responses never block SSR.
 - Root `beforeLoad` loads the current user (`getMe`) into router context; call `router.invalidate()` after login/logout/account changes.

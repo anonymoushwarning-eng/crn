@@ -37,7 +37,10 @@ export const posts = sqliteTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     title: text('title').notNull().default(''),
     story: text('story').notNull().default(''),
+    // Legacy single image key (for backward compatibility with existing posts)
     imageKey: text('image_key'),
+    // New: JSON array of media items [{ type: 'image'|'video', key: string, order: number, width?: number, height?: number, duration?: number }]
+    mediaKeys: text('media_keys', { mode: 'json' }),
     // The date/time shown on the post. Admins can change it freely.
     postedAt: integer('posted_at', { mode: 'timestamp_ms' }).notNull().default(now),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull().default(now),

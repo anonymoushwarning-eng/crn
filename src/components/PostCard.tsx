@@ -1,26 +1,31 @@
 import { useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { ShieldCheck } from 'lucide-react'
-import type { FeedPost } from '@/lib/types'
+import { ShieldCheck, Play } from 'lucide-react'
+import type { FeedPost, MediaItem } from '@/lib/types'
 import { imageUrl, rawImageUrl } from '@/lib/client'
 import { Avatar } from './Avatar'
 import { LocalTime } from './LocalTime'
 import { Reactions } from './Reactions'
 import { ShareButton } from './ShareButton'
 
-export function PostCard({
-  post,
-  index,
-  onOpenImage,
-}: {
+interface PostCardProps {
   post: FeedPost
   index: number
-  onOpenImage: (post: FeedPost) => void
-}) {
+  onOpenMedia: (post: FeedPost, initialIndex?: number) => void
+}
+
+function getMediaItems(post: FeedPost): MediaItem[] {
+  if (post.mediaKeys.length > 0) return post.mediaKeys
+  if (post.imageKey) return [{ type: 'image' as const, key: post.imageKey, order: 0 }]
+  return []
+}
+
+export function PostCard({ post, index, onOpenMedia }: PostCardProps) {
   const ref = useRef<HTMLElement>(null)
-  const [imgFallback, setImgFallback] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const long = post.story.length > 280
+  const mediaItems = getMediaItems(post)
+  const mediaCount = mediaItems.length
 
   function onMove(e: React.PointerEvent) {
     const el = ref.current
@@ -35,6 +40,44 @@ export function PostCard({
 
   function onLeave() {
     if (ref.current) ref.current.style.transform = ''
+  }
+
+  function tile(item: MediaItem, idx: number, opts: { main?: boolean; more?: number } = {}) {
+    const isVideo = item.type === 'video'
+    return (
+      <button
+        key={item.key}
+        onClick={(e) => {
+          e.stopPropagation()
+          onOpenMedia(post, idx)
+        }}
+        className="relative h-full w-full overflow-hidden bg-ink-3"
+        aria-label={isVideo ? `Play video ${idx + 1}` : `View picture ${idx + 1} of ${mediaCount}`}
+      >
+        {isVideo ? (
+          <video src={rawImageUrl(item.key)} className="h-full w-full object-cover" muted preload="metadata" playsInline />
+        ) : (
+          <img
+            src={imageUrl(item.key, opts.main ? 900 : 500)}
+            alt={post.title || `Memory ${idx + 1} shared by ${post.author.name}`}
+            loading={index < 3 && idx === 0 ? 'eager' : 'lazy'}
+            className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.03]"
+          />
+        )}
+        {isVideo && (
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-black/60 text-paper backdrop-blur-sm transition group-hover:scale-110">
+              <Play size={22} className="ml-0.5" />
+            </span>
+          </span>
+        )}
+        {opts.more ? (
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/60 text-2xl font-bold text-paper">
+            +{opts.more}
+          </span>
+        ) : null}
+      </button>
+    )
   }
 
   return (
@@ -58,22 +101,49 @@ export function PostCard({
             </p>
             <LocalTime iso={post.postedAt} className="text-xs text-mute" />
           </div>
+          {mediaCount > 0 && (
+            <span className="rounded-full border border-line bg-ink-3/70 px-2.5 py-1 text-[11px] font-semibold text-mute">
+              {mediaCount} {mediaCount === 1 ? 'item' : 'items'}
+            </span>
+          )}
         </header>
 
-        {post.imageKey && (
-          <button
-            onClick={() => onOpenImage(post)}
-            className="block w-full overflow-hidden bg-ink-3"
-            aria-label="View picture"
-          >
-            <img
-              src={imgFallback ? rawImageUrl(post.imageKey) : imageUrl(post.imageKey, 900)}
-              onError={() => setImgFallback(true)}
-              alt={post.title || `Memory shared by ${post.author.name}`}
-              loading={index < 3 ? 'eager' : 'lazy'}
-              className="w-full object-cover transition duration-700 group-hover:scale-[1.03]"
-            />
-          </button>
+        {mediaCount > 0 && (
+          <div className="relative">
+            {mediaCount === 1 && (
+              <div className="aspect-[4/3] w-full overflow-hidden">{tile(mediaItems[0], 0, { main: true })}</div>
+            )}
+
+            {mediaCount === 2 && (
+              <div className="grid aspect-[2/1] w-full grid-cols-2 grid-rows-1 gap-0.5 overflow-hidden">
+                {mediaItems.map((item, i) => (
+                  <div key={item.key} className="relative h-full w-full overflow-hidden">
+                    {tile(item, i)}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {mediaCount === 3 && (
+              <div className="grid aspect-[3/2] w-full grid-cols-3 grid-rows-2 gap-0.5 overflow-hidden">
+                <div className="relative col-span-2 row-span-2 overflow-hidden">
+                  {tile(mediaItems[0], 0, { main: true })}
+                </div>
+                <div className="relative col-span-1 row-span-1 overflow-hidden">{tile(mediaItems[1], 1)}</div>
+                <div className="relative col-span-1 row-span-1 overflow-hidden">{tile(mediaItems[2], 2)}</div>
+              </div>
+            )}
+
+            {mediaCount >= 4 && (
+              <div className="grid aspect-square w-full grid-cols-2 grid-rows-2 gap-0.5 overflow-hidden">
+                {mediaItems.slice(0, 4).map((item, i) => (
+                  <div key={item.key} className="relative h-full w-full overflow-hidden">
+                    {tile(item, i, { more: i === 3 && mediaCount > 4 ? mediaCount - 4 : undefined })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         <div className="space-y-3 p-5" style={{ transform: 'translateZ(20px)' }}>

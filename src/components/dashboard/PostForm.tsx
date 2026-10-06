@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { CalendarClock } from 'lucide-react'
-import type { FeedPost } from '@/lib/types'
+import type { FeedPost, MediaItem } from '@/lib/types'
 import { createPost, updatePost } from '@/server/dashboard.functions'
 import { errorMessage, fromLocalInput, toLocalInput } from '@/lib/client'
-import { ImagePicker } from './ImagePicker'
+import { MediaPicker } from './MediaPicker'
 
 export function PostForm({
   post,
@@ -16,7 +16,11 @@ export function PostForm({
 }) {
   const [title, setTitle] = useState(post?.title ?? '')
   const [story, setStory] = useState(post?.story ?? '')
-  const [imageKey, setImageKey] = useState<string | null>(post?.imageKey ?? null)
+  // Convert legacy imageKey to mediaKeys array for backward compatibility
+  const legacyMedia = post?.imageKey && !post?.mediaKeys?.length
+    ? [{ type: 'image' as const, key: post.imageKey, order: 0 }]
+    : []
+  const [mediaKeys, setMediaKeys] = useState<MediaItem[]>(post?.mediaKeys?.length ? post.mediaKeys : legacyMedia)
   const [customDate, setCustomDate] = useState(post ? toLocalInput(post.postedAt) : '')
   const [uploading, setUploading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -28,7 +32,7 @@ export function PostForm({
     setError('')
     try {
       const postedAt = isAdmin && customDate ? fromLocalInput(customDate) : undefined
-      const data = { title, story, imageKey, postedAt }
+      const data = { title, story, mediaKeys, postedAt, imageKey: null as string | null }
       if (post) await updatePost({ data: { ...data, id: post.id } })
       else await createPost({ data })
       onSaved()
@@ -41,7 +45,7 @@ export function PostForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-5">
-      <ImagePicker value={imageKey} onChange={setImageKey} onBusyChange={setUploading} />
+      <MediaPicker value={mediaKeys} onChange={setMediaKeys} onBusyChange={setUploading} />
       <label className="block text-sm font-medium">
         Title
         <input
@@ -68,7 +72,7 @@ export function PostForm({
         <div className="rounded-2xl border border-line bg-ink-3/40 p-4">
           <label className="block text-sm font-medium">
             <span className="flex items-center gap-2">
-              <CalendarClock size={16} className="text-ember" /> Date &amp; time shown on the post
+              <CalendarClock size={16} className="text-ember" /> Date & time shown on the post
             </span>
             <input
               type="datetime-local"
@@ -85,7 +89,7 @@ export function PostForm({
 
       {error && <p role="alert" className="text-sm text-ember-soft">{error}</p>}
       <button type="submit" disabled={busy || uploading} className="btn-primary w-full py-3.5">
-        {busy ? 'Saving…' : uploading ? 'Uploading picture…' : post ? 'Save changes' : 'Publish memory'}
+        {busy ? 'Saving…' : uploading ? 'Uploading media…' : post ? 'Save changes' : 'Publish memory'}
       </button>
     </form>
   )
